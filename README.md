@@ -35,9 +35,15 @@ The included workflow builds and deploys the site when changes are pushed to
 
 The summaries, question index, and question chunks in `public/data/` are sufficient
 to build and publish the site. Forecast trajectories, notebooks, and tool records
-load on demand from the public Hugging Face dataset at the revision pinned in
-`public/data/manifest.json`; no API key or backend is required.
+load on demand from the public Hugging Face dataset
+[liqinye/Forecast-Dojo-Trajectories](https://huggingface.co/datasets/liqinye/Forecast-Dojo-Trajectories)
+at the revision pinned in `public/data/manifest.json` (`huggingFace.revision` and
+`huggingFace.webBase`); no API key or backend is required. The Dataset buttons link to
+the benchmark data itself,
+[liqinye/Forecast-Dojo](https://huggingface.co/datasets/liqinye/Forecast-Dojo), and the
+Code buttons to [Forecast-Dojo/Forecast-Dojo](https://github.com/Forecast-Dojo/Forecast-Dojo).
 
 Data generation stays in the research repository. To publish a refreshed snapshot,
-replace `public/data/` with its generated website data and retain a matching
-Hugging Face revision in the manifest.
+replace `public/data/` with its generated website data, upload the matching
+`paper-*/` folder of trajectories and details to the trajectories dataset, and point
+`huggingFace.revision` and `huggingFace.webBase` in the manifest at that commit.

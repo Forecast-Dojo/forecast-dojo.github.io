@@ -37,9 +37,11 @@ const QUESTION_PAGE_SIZE = 15
 const QUESTION_PAGE_SIZES = [15, 30, 50, 100]
 const PAPER_URL = 'https://arxiv.org/pdf/2609.28876v1'
 const PAPER_ABSTRACT_URL = 'https://arxiv.org/abs/2609.28876'
-const CODE_URL = 'https://github.com/liqinye/Forecast-Dojo'
+const CODE_URL = 'https://github.com/Forecast-Dojo/Forecast-Dojo'
 // Fallback when a snapshot does not pin its own Hugging Face dataset; keep it equal to manifest.json's datasetUrl.
 const DATASET_URL = 'https://huggingface.co/datasets/liqinye/Forecast-Dojo'
+// The per-question trajectories and process records live in a companion dataset named by manifest.huggingFace.repository.
+const trajectoriesUrl = (manifest: { huggingFace?: { repository: string } }) => manifest.huggingFace ? `https://huggingface.co/datasets/${manifest.huggingFace.repository}` : DATASET_URL
 const PAPER_TITLE = 'Replayable Environments for Benchmarking and Training LLM Forecasting Agents'
 // Paper v1 author block: 1 Georgia Tech, 2 Amazon, 3 University of Florida; * equal contribution; † work done outside Amazon.
 const PAPER_AUTHORS = [
@@ -627,7 +629,7 @@ function QuestionDetailPage({ item, questions, browseState, manifest, runSummari
             ) : null}
           </div>
           {trajectoryLoading ? <div className="remote-state"><strong>Loading model trajectories…</strong><p>The question record is already available; forecast data is arriving from Hugging Face.</p></div> : null}
-          {trajectoryError ? <div className="remote-state error" role="alert"><strong>Model trajectories are temporarily unavailable.</strong><p>{trajectoryError}</p>{manifest.huggingFace ? <a href={manifest.huggingFace.datasetUrl} target="_blank" rel="noreferrer">Open the Forecast Dojo dataset ↗</a> : null}</div> : null}
+          {trajectoryError ? <div className="remote-state error" role="alert"><strong>Model trajectories are temporarily unavailable.</strong><p>{trajectoryError}</p>{manifest.huggingFace ? <a href={trajectoriesUrl(manifest)} target="_blank" rel="noreferrer">Open the trajectories dataset ↗</a> : null}</div> : null}
           {selected ? (
             <>
               <p className="run-context"><span>{sourceLabel(selected.first.sourceType)}</span><span>{modeLabel(selected.first.mode)}</span><span>{retrievalLabel(selected.first.retrieval)}</span><span>{selected.first.protocol ?? 'Published run'}</span></p>
@@ -662,7 +664,7 @@ function QuestionDetailPage({ item, questions, browseState, manifest, runSummari
         </aside>
         {selected?.rows.length ? <ForecastCheckpoints rows={selected.rows} fallbackDates={detail.forecastDates} outcome={outcome} resolvedOutcome={detail.resolvedLabel} /> : null}
       </section>
-      {selectedRun && selectedRun.rows.some(hasCheckpointTelemetry) ? <CheckpointActivity key={selectedRun.id} rows={selectedRun.rows} fallbackDates={detail.forecastDates} processState={processState} processError={processError} onLoadProcess={loadProcess} datasetUrl={manifest.huggingFace?.datasetUrl} /> : null}
+      {selectedRun && selectedRun.rows.some(hasCheckpointTelemetry) ? <CheckpointActivity key={selectedRun.id} rows={selectedRun.rows} fallbackDates={detail.forecastDates} processState={processState} processError={processError} onLoadProcess={loadProcess} datasetUrl={manifest.huggingFace ? trajectoriesUrl(manifest) : undefined} /> : null}
     </div>
   )
 }
@@ -2312,7 +2314,7 @@ function CheckpointActivity({ rows, fallbackDates, processState, processError, o
       <div><p className="eyebrow">Process record</p><h3 id="checkpoint-activity-title">Tools and belief notebooks</h3><p>Checkpoint totals are part of the lightweight trajectory. Full notebook text and the tool success, error, and latency breakdown load from Hugging Face only when requested.</p></div>
       <div className="process-load-row">
         {processState === 'loaded' ? <span className="process-loaded">Full process records loaded</span> : <button className="button process-button" type="button" disabled={processState === 'loading'} aria-busy={processState === 'loading'} onClick={onLoadProcess}>{processState === 'loading' ? 'Loading from Hugging Face…' : processState === 'error' ? 'Retry full process records' : 'Load full notebooks & tool records'}</button>}
-        {datasetUrl ? <a href={datasetUrl} target="_blank" rel="noreferrer">Open dataset ↗</a> : null}
+        {datasetUrl ? <a href={datasetUrl} target="_blank" rel="noreferrer">Open trajectories dataset ↗</a> : null}
         <div className="process-repeat-control" role="group" aria-label="Repeat to show">
           <span>Repeat</span>
           <div className="process-repeat-options">{repeats.map((repeat) => <button type="button" key={repeat} aria-label={`Show repeat ${repeat + 1}`} aria-pressed={activeRepeat === repeat} aria-controls="checkpoint-activity-records" onClick={() => setSelectedRepeat(repeat)}>{repeat + 1}</button>)}</div>
