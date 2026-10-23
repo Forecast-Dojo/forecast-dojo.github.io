@@ -39,7 +39,7 @@ const PAPER_URL = 'https://arxiv.org/pdf/2609.28876v1'
 const PAPER_ABSTRACT_URL = 'https://arxiv.org/abs/2609.28876'
 const CODE_URL = 'https://github.com/liqinye/Forecast-Dojo'
 // Fallback when a snapshot does not pin its own Hugging Face dataset; keep it equal to manifest.json's datasetUrl.
-const DATASET_URL = 'https://huggingface.co/datasets/FinEredium1/Forecast-Dojo'
+const DATASET_URL = 'https://huggingface.co/datasets/liqinye/Forecast-Dojo'
 const PAPER_TITLE = 'Replayable Environments for Benchmarking and Training LLM Forecasting Agents'
 // Paper v1 author block: 1 Georgia Tech, 2 Amazon, 3 University of Florida; * equal contribution; † work done outside Amazon.
 const PAPER_AUTHORS = [
