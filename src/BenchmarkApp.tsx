@@ -12,6 +12,8 @@ import zaiLogo from '@lobehub/icons-static-svg/icons/zai.svg'
 import { attachQuestionProcess, loadAnalysis, loadManifest, loadQuestion, loadQuestionIndex, loadQuestionProcess, loadRunSummaries, loadTrajectories } from './data'
 import type { AnalysisSummary, BreakdownAggregate, ConsistencySummary, ForecastMode, Manifest, MurphySummary, PairedModeComparison, QuestionDetail, QuestionIndexItem, RunAnalysis, RunSummary, SourceType, TrajectoryRow } from './types'
 import { ForecastStagesFigure, MemoryCostFigure } from './PaperFigures'
+import { ReplayIllustration } from './ReplayIllustration'
+import { CheckIcon, CopyIcon, GitHubIcon, HuggingFaceIcon, PaperIcon, QuoteIcon, ArrowDownIcon, ArrowUpIcon } from './icons'
 import { modelMetadataFor } from './modelMetadata'
 
 import { averageRepeats, probabilityForOutcome } from './trajectories'
@@ -35,12 +37,19 @@ const QUESTION_PAGE_SIZE = 15
 const QUESTION_PAGE_SIZES = [15, 30, 50, 100]
 const PAPER_URL = 'https://arxiv.org/pdf/2609.28876v1'
 const PAPER_ABSTRACT_URL = 'https://arxiv.org/abs/2609.28876'
+const CODE_URL = 'https://github.com/liqinye/Forecast-Dojo'
+// Fallback when a snapshot does not pin its own Hugging Face dataset; keep it equal to manifest.json's datasetUrl.
+const DATASET_URL = 'https://huggingface.co/datasets/FinEredium1/Forecast-Dojo'
+const PAPER_TITLE = 'Replayable Environments for Benchmarking and Training LLM Forecasting Agents'
+// Paper v1 author block: 1 Georgia Tech, 2 Amazon, 3 University of Florida; * equal contribution; † work done outside Amazon.
+const PAPER_AUTHORS = [
+  { name: 'Liqin Ye', marks: '*1' }, { name: 'Haorui Wang', marks: '*1' }, { name: 'Fardin Ahmed', marks: '1' }, { name: 'Rongzhi Zhang', marks: '†2' },
+  { name: 'Yuan He', marks: '†2' }, { name: 'Ziyuan Lin', marks: '3' }, { name: 'Yanbin Yin', marks: '1' }, { name: 'Jing Peng', marks: '1' },
+  { name: 'Michael Galarnyk', marks: '1' }, { name: 'Sudheer Chava', marks: '1' }, { name: 'Chao Zhang', marks: '1' },
+]
 // Paper v1: Table 2 and Sections 3, 4.2, and 5.1.
 const PAPER_SCOPE = {
-  eventCount: 1338 + 230,
-  forecastStepCount: 5325 + 797,
   modelCount: 12,
-  memoryModeCount: 2,
   articleCount: '18.8M',
 }
 
@@ -97,14 +106,33 @@ function BenchmarkApp() {
     return () => { cancelled = true }
   }, [route, data.questions, data.questionError])
 
+  const releaseLoaded = data.manifest !== null
+  const scrolledOnce = useRef(false)
   useEffect(() => {
     const anchor = route.split('#')[1]
     if (!anchor) {
-      window.scrollTo({ top: 0 })
+      window.scrollTo({ top: 0, behavior: 'instant' })
+      scrolledOnce.current = true
       return
     }
-    window.requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ block: 'start' }))
-  }, [route])
+    // The section may mount a frame later than the route change (or only once the release has loaded).
+    // A deep link lands instantly; later in-page jumps keep the page's smooth scrolling.
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(anchor)
+      if (!target) return
+      target.scrollIntoView({ block: 'start', behavior: scrolledOnce.current ? 'smooth' : 'instant' })
+      scrolledOnce.current = true
+    })
+  }, [route, releaseLoaded])
+
+  useEffect(() => {
+    const base = 'Forecast Dojo'
+    const questionTitle = routePath.startsWith('/questions/') ? data.questions?.find((candidate) => candidate.id === decodeURIComponent(routePath.slice('/questions/'.length)))?.title : undefined
+    document.title = questionTitle ? `${questionTitle} · ${base}`
+      : routePath.startsWith('/results') ? `Analysis · ${base}`
+        : routePath.startsWith('/questions') ? `Questions · ${base}`
+          : `${base} — Replayable environments for LLM forecasting agents`
+  }, [routePath, data.questions])
 
   const section = routePath.startsWith('/results')
     ? 'results'
@@ -131,12 +159,17 @@ function BenchmarkApp() {
   })()
 
   return (
-    <div className="site-shell">
-      <Header active={section} />
-      <main>{content}</main>
-      <Footer manifest={data.manifest} />
-    </div>
+    <>
+      <div className="site-shell">
+        <Header active={section} />
+        <main>{content}</main>
+      </div>
+    </>
   )
+}
+
+function NewTab() {
+  return <span className="sr-only"> (opens in a new tab)</span>
 }
 
 function Header({ active }: { active: string }) {
@@ -151,126 +184,184 @@ function Header({ active }: { active: string }) {
           ['results', 'Analysis'],
           ['questions', 'Questions'],
         ].map(([key, label]) => <a key={key} className={active === key ? 'active' : ''} href={releaseHref(`#/${key}`)}>{label}</a>)}
-        <a className={active === 'paper' ? 'active' : ''} href={PAPER_URL} target="_blank" rel="noopener noreferrer">Paper</a>
       </nav>
     </header>
   )
 }
 
-function Footer({ manifest }: { manifest: Manifest | null }) {
-  return (
-    <footer className="site-footer">
-      <span>Forecast Dojo</span>
-      <span>{manifest?.label ?? 'Versioned benchmark release'}</span>
-    </footer>
-  )
-}
-
 function OverviewPage({ manifest, runs, analysis }: { manifest: Manifest; runs: RunSummary[]; analysis: AnalysisSummary | null }) {
-  runs = runs.filter((run) => run.retrieval === 'baseline')
+  const toolRuns = runs.filter((run) => run.retrieval === 'baseline')
   const murphy = analysis?.research?.murphy ?? []
-  const costRuns = runs.filter((run) => isFiniteNumber(run.avgUsd) && run.avgUsd > 0)
+  const costRuns = toolRuns.filter((run) => isFiniteNumber(run.avgUsd) && run.avgUsd > 0)
+  const datasetUrl = manifest.huggingFace?.datasetUrl ?? DATASET_URL
+  const modelCount = new Set(toolRuns.map((run) => run.modelName)).size || manifest.modelCount || PAPER_SCOPE.modelCount
+  const proprietaryCount = new Set(toolRuns.filter((run) => run.sourceType === 'closed').map((run) => run.modelName)).size
+  const openCount = new Set(toolRuns.filter((run) => run.sourceType === 'open').map((run) => run.modelName)).size
+  const heldOutSteps = manifest.evaluationCheckpointCount
 
   return (
     <>
-      <section className="hero overview-hero section-rule">
-        <div className="overview-hero-intro">
-          <h1>Forecast Dojo</h1>
-          <p className="overview-question">Replayable environments to benchmark and train LLM forecasting agents.</p>
-          <div className="overview-actions">
-            <a className="button button-primary" href={PAPER_URL} target="_blank" rel="noopener noreferrer">Read the paper <span aria-hidden="true">↗</span></a>
-            <a href={releaseHref('#/results')}>Explore results <span aria-hidden="true">↗</span></a>
+      <section className="hero overview-hero" aria-labelledby="hero-title">
+        <div className="hero-layout">
+        <div className="hero-copy">
+          <h1 id="hero-title">A time machine for <em>forecasting agents.</em></h1>
+          <p className="hero-pitch">Agents travel back to the days before real events resolved and research the news <strong>only up to that time</strong>.</p>
+          <div className="hero-links">
+            <a className="btn" href={PAPER_URL} target="_blank" rel="noopener noreferrer"><PaperIcon />Paper<NewTab /></a>
+            <a className="btn" href={CODE_URL} target="_blank" rel="noopener noreferrer"><GitHubIcon />Code<NewTab /></a>
+            <a className="btn" href={datasetUrl} target="_blank" rel="noopener noreferrer"><HuggingFaceIcon />Dataset<NewTab /></a>
+            <a className="btn" href={releaseHref('#/overview#paper')} onClick={(event) => { if (window.location.hash === '#/overview#paper') { event.preventDefault(); document.getElementById('paper')?.scrollIntoView({ block: 'start' }) } }}><QuoteIcon />BibTeX</a>
           </div>
         </div>
-        <PaperOverviewFigure />
+        <ReplayIllustration />
+        </div>
       </section>
 
-      <section className="highlight-section overview-results-stack section-rule" aria-label="Benchmark results">
-        <MemoryChartCard title="Brier score" accent="activity" className="accuracy-card">
-          {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={runs} baseline={manifest.crowd.brier} metric="brier" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
+      <section className="hero-record" aria-label="Paper and affiliations">
+        <p>{PAPER_TITLE}</p>
+        <span>Georgia Tech <span className="separator" aria-hidden="true">/</span> Amazon <span className="separator" aria-hidden="true">/</span> University of Florida</span>
+      </section>
+
+      <section className="scale-strip" aria-label="Benchmark scale">
+        <ScaleStat value={number(manifest.questionCount)} label="resolved Polymarket events, split by time into train and eval" />
+        <ScaleStat value={number(manifest.checkpointCount)} label={heldOutSteps ? `dated forecast steps, ${number(heldOutSteps)} of them held out for evaluation` : 'dated forecast steps across the training and evaluation periods'} />
+        <ScaleStat value={<>18.8<small>M</small></>} label="dated news articles the agents can search" />
+        <ScaleStat value={number(modelCount)} label={proprietaryCount && openCount ? `models evaluated, ${proprietaryCount} proprietary and ${openCount} open-weight` : 'models evaluated in three research settings'} />
+      </section>
+
+      <section className="highlight-section overview-results-stack section-rule" id="results" aria-label="Benchmark results">
+        <MemoryChartCard title="Brier score" metric="brier" accent="activity" className="accuracy-card">
+          {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={toolRuns} baseline={manifest.crowd.brier} metric="brier" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
         </MemoryChartCard>
-        <MemoryChartCard title="Accuracy" accent="quality" className="accuracy-card accuracy-metric-card">
-          {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={runs} baseline={manifest.crowd.accuracy} metric="accuracy" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
+        <MemoryChartCard title="Accuracy" metric="accuracy" accent="quality" className="accuracy-card accuracy-metric-card">
+          {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={toolRuns} baseline={manifest.crowd.accuracy} metric="accuracy" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
         </MemoryChartCard>
-        <MemoryChartCard title="Information alpha" help="infoAlpha" accent="tokens" className="accuracy-card">
-          {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={runs} baseline={manifest.crowd.infoAlpha} metric="infoAlpha" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
+        <MemoryChartCard title="Information alpha" metric="infoAlpha" help="infoAlpha" accent="tokens" className="accuracy-card">
+          {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={toolRuns} baseline={manifest.crowd.infoAlpha} metric="infoAlpha" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
         </MemoryChartCard>
         {murphy.length ? <MemoryChartCard title="Murphy decomposition" help="murphy" accent="quality" className="accuracy-card research-scatter-card murphy-metric-card">
-          {(memoryEnabled, heading, memoryControl) => <ResearchScatterChart runs={runs} murphy={murphy} kind="murphy" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
+          {(memoryEnabled, heading, memoryControl) => <ResearchScatterChart runs={toolRuns} murphy={murphy} kind="murphy" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
         </MemoryChartCard> : null}
         {costRuns.length ? <MemoryChartCard title="Cost per forecast" accent="activity" className="accuracy-card cost-metric-card">
           {(memoryEnabled, heading, memoryControl) => <MetricLeaderboardChart runs={costRuns} baseline={null} metric="avgUsd" memoryEnabled={memoryEnabled} heading={heading} memoryControl={memoryControl} />}
         </MemoryChartCard> : null}
       </section>
 
-      <OverviewStudyDesign manifest={manifest} />
-      <OverviewCitation />
+      <HowItWorks />
+      <PaperBand datasetUrl={datasetUrl} />
     </>
   )
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return <article><span className="stat-value">{value}</span><span className="stat-label">{label}</span></article>
+function ScaleStat({ value, label }: { value: React.ReactNode; label: string }) {
+  return <div className="scale-stat"><strong>{value}</strong><span>{label}</span></div>
 }
 
-function OverviewCitation() {
+function HowItWorks() {
   return (
-    <section className="overview-citation section-rule" aria-labelledby="citation-heading">
-      <h2 id="citation-heading">Citation</h2>
-      <pre className="citation-bibtex"><code>{`@misc{ye2026forecastdojoreplayableenvironmentsbenchmarking,
-  title={Forecast-Dojo: Replayable Environments for Benchmarking and Training LLM Forecasting Agents},
-  author={Liqin Ye and Haorui Wang and Fardin Ahmed and Rongzhi Zhang and Yuan He
-          and Ziyuan Lin and Yanbin Yin and Jing Peng and Michael Galarnyk
-          and Sudheer Chava and Chao Zhang},
-  year={2026},
-  eprint={2609.28876},
-  archivePrefix={arXiv},
-  primaryClass={cs.AI},
-  url={`}<a href={PAPER_ABSTRACT_URL} target="_blank" rel="noopener noreferrer">{PAPER_ABSTRACT_URL}</a>{`},
-}`}</code></pre>
+    <section className="how-it-works section-rule" id="environment" aria-labelledby="how-title">
+      <div className="section-head single">
+        <div>
+          <p className="eyebrow">How it works</p>
+          <h2 id="how-title" className="one-line">How the time machine works. <em>Curate, replay, research, score, train.</em></h2>
+        </div>
+      </div>
+      <PaperOverviewFigure />
+      <ol className="how-steps">
+        <li className="how-step"><span className="no" aria-hidden="true">01</span><h3>Replay an event</h3><p>Each resolved event becomes a fixed sequence of historical forecast dates shared by every model, so runs are comparable and repeatable. Outcomes and market prices are never shown to the agent.</p></li>
+        <li className="how-step"><span className="no" aria-hidden="true">02</span><h3>Research dated evidence</h3><p>With search, article reading and a Python sandbox, the agent works only from news dated on or before the current step, then commits a probability for each outcome.</p></li>
+        <li className="how-step"><span className="no" aria-hidden="true">03</span><h3>Score, then learn</h3><p>Every step is scored against the realized outcome with Brier, accuracy and Information α, and compared with the historical market. The same interactions become training trajectories with outcome feedback.</p></li>
+      </ol>
+      <div className="memory-modes">
+        <div className="memory-mode free">
+          <span className="memory-icon-control memory-cycle-control independent" aria-hidden="true"><MemoryGlyph illumination="independent" /></span>
+          <div><h3>Memory-free</h3><p>Every forecast date starts from a fresh context. Nothing carries over between dates.</p></div>
+        </div>
+        <div className="memory-mode on">
+          <span className="memory-icon-control memory-cycle-control sequential active" aria-hidden="true"><MemoryGlyph illumination="sequential" /></span>
+          <div><h3>Memory-on</h3><p>The agent also writes a belief notebook with its probabilities, evidence and open questions. The belief notebook is carried to the next date.</p></div>
+        </div>
+      </div>
     </section>
   )
 }
 
-function OverviewStudyDesign({ manifest }: { manifest: Manifest }) {
+function PaperBand({ datasetUrl }: { datasetUrl: string }) {
+  const [copied, setCopied] = useState(false)
+  const copyTimer = useRef<number | null>(null)
+  useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current) }, [])
+  const bibtex = `@misc{ye2026forecastdojo,
+      title={Forecast-Dojo: Replayable Environments
+             for Benchmarking and Training
+             LLM Forecasting Agents},
+      author={Liqin Ye and Haorui Wang and
+              Fardin Ahmed and Rongzhi Zhang and
+              Yuan He and Ziyuan Lin and
+              Yanbin Yin and Jing Peng and
+              Michael Galarnyk and Sudheer Chava
+              and Chao Zhang},
+      year={2026},
+      eprint={2609.28876},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={${PAPER_ABSTRACT_URL}},
+}`
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(bibtex)
+      setCopied(true)
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopied(false), 2200)
+    } catch {
+      window.prompt('Copy the BibTeX entry', bibtex)
+    }
+  }
   return (
-    <section className="overview-study section-rule" aria-label="Study design and benchmark scope">
-      <aside className="overview-stats" aria-label="Paper benchmark scope">
-        <p className="eyebrow">Benchmark scope</p>
-        <div className="overview-stat-list">
-          <Stat value={number(manifest.questionCount)} label="forecasting events" />
-          <Stat value={number(manifest.checkpointCount)} label="dated forecast steps" />
-          <Stat value={number(manifest.modelCount ?? PAPER_SCOPE.modelCount)} label="models evaluated" />
-          <Stat value={number(PAPER_SCOPE.memoryModeCount)} label="memory modes" />
-          <Stat value={PAPER_SCOPE.articleCount} label="news articles in corpus" />
+    <section className="paper-band" id="paper" aria-labelledby="paper-heading">
+      <div className="paper-band-inner">
+        <p className="eyebrow">The paper</p>
+        <div className="paper-grid">
+          <div>
+            <h2 className="paper-heading" id="paper-heading"><span className="paper-name">Forecast Dojo</span> <span className="paper-title">{PAPER_TITLE}</span></h2>
+            <p className="paper-authors">{PAPER_AUTHORS.map((author, index) => <span key={author.name}>{author.name.replace(' ', ' ')}<sup>{author.marks}</sup>{index < PAPER_AUTHORS.length - 1 ? ', ' : ''}</span>)}</p>
+            <p className="paper-affils">
+              <span><sup>1</sup>Georgia Institute of Technology</span> <span className="aff-sep" aria-hidden="true">·</span> <span><sup>2</sup>Amazon</span> <span className="aff-sep" aria-hidden="true">·</span> <span><sup>3</sup>University of Florida</span><br />
+              <span><sup>*</sup>Equal contribution</span> <span className="aff-sep" aria-hidden="true">·</span> <span><sup>†</sup>Work done outside Amazon</span>
+              <span className="paper-contact">Contact: <a href="mailto:liqiny@gatech.edu,hwang984@gatech.edu">{'{liqiny, hwang984}@gatech.edu'}</a></span>
+            </p>
+            <div className="paper-links">
+              <a className="btn" href={PAPER_URL} target="_blank" rel="noopener noreferrer"><PaperIcon />Paper<NewTab /></a>
+              <a className="btn" href={CODE_URL} target="_blank" rel="noopener noreferrer"><GitHubIcon />Code<NewTab /></a>
+              <a className="btn" href={datasetUrl} target="_blank" rel="noopener noreferrer"><HuggingFaceIcon />Dataset<NewTab /></a>
+            </div>
+          </div>
+          <div className="paper-cite">
+            <p className="paper-cite-label" id="cite-label">Cite this work</p>
+            <div className="cite-wrap">
+              <button type="button" className={`copy-btn${copied ? ' done' : ''}`} onClick={copy} aria-label={copied ? 'BibTeX copied' : 'Copy BibTeX'} title="Copy BibTeX">{copied ? <CheckIcon /> : <CopyIcon />}</button>
+              <span className="sr-only" role="status" aria-live="polite">{copied ? 'BibTeX copied to the clipboard.' : ''}</span>
+              <pre><code>{bibtex.split(PAPER_ABSTRACT_URL)[0]}<a href={PAPER_ABSTRACT_URL} target="_blank" rel="noopener noreferrer">{PAPER_ABSTRACT_URL}</a>{bibtex.split(PAPER_ABSTRACT_URL)[1]}</code></pre>
+            </div>
+          </div>
         </div>
-      </aside>
-      <article className="overview-study-design">
-        <p className="eyebrow">Study design</p>
-        <h2>Replay · research · forecast</h2>
-        <ol className="overview-study-steps">
-          <li><span aria-hidden="true">01</span><div><h3>Replay an event</h3><p>Fixed forecast dates; outcomes hidden from agents.</p></div></li>
-          <li><span aria-hidden="true">02</span><div><h3>Research dated evidence</h3><p>Search, read and compute over CC-News available by that date.</p></div></li>
-          <li><span aria-hidden="true">03</span><div><h3>Score probabilities</h3><p>Brier, accuracy and Information α; historical market belief as a reference.</p></div></li>
-        </ol>
-      </article>
+      </div>
     </section>
   )
 }
 
 function PaperOverviewFigure() {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const figureUrl = `${import.meta.env.BASE_URL}figures/forecast-dojo-figure-1.webp`
+  const figureUrl = `${import.meta.env.BASE_URL}figures/forecast-dojo-overview.svg`
   const description = 'Figure 1 from the paper: curate historical events and dated news, forecast each question over time, research with date-limited tools and optional belief notebooks, then score hidden outcomes for evaluation and training.'
 
   return (
-    <figure className="paper-overview-figure" id="environment">
+    <figure className="how-figure">
       <button className="paper-figure-preview" type="button" onClick={() => dialogRef.current?.showModal()} aria-label="Enlarge Figure 1" title="Click to enlarge Figure 1">
-        <img src={figureUrl} width="2800" height="1989" alt={description} fetchPriority="high" />
+        <img src={figureUrl} width="1090" height="774" alt={description} loading="lazy" />
       </button>
       <dialog className="paper-figure-dialog" ref={dialogRef} aria-label="Figure 1: Overview of Forecast Dojo" onClick={(event) => { if (event.target === event.currentTarget) dialogRef.current?.close() }}>
         <div className="paper-figure-dialog-header"><button type="button" aria-label="Close figure" onClick={() => dialogRef.current?.close()}>Close <span aria-hidden="true">×</span></button></div>
-        <div className="paper-figure-enlarged"><img src={figureUrl} width="2800" height="1989" alt={description} /></div>
+        <div className="paper-figure-enlarged"><img src={figureUrl} width="1090" height="774" alt={description} /></div>
       </dialog>
     </figure>
   )
@@ -1001,12 +1092,22 @@ function MemoryToggle({ title, enabled: memoryEnabled, comparisonMode, showLabel
   )
 }
 
-function MemoryChartCard({ title, help, accent, className = '', children }: { title: string; help?: MetricHelpKind; accent: 'quality' | 'activity' | 'tokens'; className?: string; children: (memoryEnabled: boolean, heading: React.ReactNode, memoryControl: React.ReactNode) => React.ReactNode }) {
+function MetricDirection({ metric }: { metric: Metric }) {
+  const { direction } = metricDetails[metric]
+  const lowerIsBetter = direction === 'Lower is better'
+  return <span className="metric-direction" role="img" aria-label={direction} title={direction}>{lowerIsBetter ? <ArrowDownIcon /> : <ArrowUpIcon />}</span>
+}
+
+function MemoryChartCard({ title, help, metric, accent, className = '', children }: { title: string; help?: MetricHelpKind; metric?: Metric; accent: 'quality' | 'activity' | 'tokens'; className?: string; children: (memoryEnabled: boolean, heading: React.ReactNode, memoryControl: React.ReactNode) => React.ReactNode }) {
   const [memoryEnabled, setMemoryEnabled] = useState(false)
+  // Keep the last word of the title on the same line as the direction arrow and help button so the icons never orphan.
+  const lastSpace = title.lastIndexOf(' ')
+  const titleHead = lastSpace === -1 ? '' : title.slice(0, lastSpace + 1)
+  const titleTail = lastSpace === -1 ? title : title.slice(lastSpace + 1)
   return (
     <article className={`highlight-card ${accent} ${className}`.trim()}>
       {children(memoryEnabled,
-        <div className="highlight-card-heading"><span aria-hidden="true" /><h3>{title}{help ? <MetricHelp kind={help} /> : null}</h3></div>,
+        <div className="highlight-card-heading"><span aria-hidden="true" /><h3>{titleHead}<span className="heading-tail">{titleTail}{metric ? <MetricDirection metric={metric} /> : null}{help ? <MetricHelp kind={help} /> : null}</span></h3></div>,
         <MemoryToggle title={title} enabled={memoryEnabled} onChange={() => setMemoryEnabled((enabled) => !enabled)} />,
       )}
     </article>
